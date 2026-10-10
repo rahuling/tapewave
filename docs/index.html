@@ -1,0 +1,332 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Tapewave: a Winamp-style player for the internet age</title>
+  <meta name="description" content="Tapewave is an open-source, Winamp-style music player written in Rust. Local files, internet radio and podcasts today, skins and mobile next.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=VT323&family=Space+Grotesk:wght@400;500;700&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg: #0d0716;
+      --panel: #171029;
+      --line: #2e2150;
+      --text: #efe9ff;
+      --dim: #9d92c2;
+      --magenta: #ff3dcb;
+      --cyan: #3de7ff;
+      --amber: #ffb547;
+      --glow: 0 0 18px rgba(255, 61, 203, .45);
+    }
+    @media (prefers-color-scheme: light) {
+      :root:not([data-theme="dark"]) {
+        --bg: #f6f1ff;
+        --panel: #ffffff;
+        --line: #d9cdf5;
+        --text: #1b1333;
+        --dim: #5f5485;
+        --magenta: #d6198f;
+        --cyan: #0a8fb0;
+        --amber: #b86e00;
+        --glow: none;
+      }
+    }
+
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font: 16px/1.6 "Space Grotesk", system-ui, sans-serif;
+      overflow-x: hidden;
+    }
+    body::after {
+      /* faint CRT scanlines over everything */
+      content: "";
+      position: fixed; inset: 0;
+      pointer-events: none;
+      background: repeating-linear-gradient(to bottom, transparent 0 2px, rgba(0,0,0,.12) 2px 3px);
+      z-index: 50;
+    }
+    a { color: var(--cyan); }
+    code, .mono { font-family: "JetBrains Mono", ui-monospace, monospace; font-size: .9em; }
+    .wrap { width: min(1080px, calc(100% - 32px)); margin: 0 auto; }
+
+    /* ---------- hero ---------- */
+    header.hero {
+      position: relative;
+      padding: 56px 0 72px;
+      background:
+        radial-gradient(900px 500px at 85% -10%, rgba(255,61,203,.28), transparent 60%),
+        radial-gradient(700px 480px at -10% 40%, rgba(61,231,255,.2), transparent 60%),
+        var(--bg);
+      border-bottom: 1px solid var(--line);
+    }
+    .topbar {
+      display: flex; justify-content: space-between; align-items: center;
+      font-family: "VT323", monospace; font-size: 22px; color: var(--dim);
+    }
+    .topbar a { color: var(--dim); text-decoration: none; }
+    .topbar a:hover { color: var(--magenta); }
+    .hero-grid {
+      display: grid; grid-template-columns: 1.1fr .9fr; gap: 40px; align-items: center;
+      margin-top: 40px;
+    }
+    h1 {
+      font-family: "VT323", monospace;
+      font-weight: 400;
+      font-size: clamp(72px, 13vw, 132px);
+      line-height: .9;
+      margin: 0;
+      letter-spacing: 2px;
+      background: linear-gradient(90deg, var(--magenta), var(--amber) 55%, var(--cyan));
+      -webkit-background-clip: text; background-clip: text; color: transparent;
+      text-shadow: none;
+      filter: drop-shadow(0 0 22px rgba(255,61,203,.25));
+    }
+    .tagline { font-size: clamp(20px, 2.6vw, 26px); margin: 16px 0 8px; font-weight: 500; }
+    .lede { color: var(--dim); max-width: 46ch; margin: 0 0 28px; }
+    .cta { display: flex; flex-wrap: wrap; gap: 12px; }
+    .btn {
+      display: inline-block; padding: 12px 20px; border-radius: 999px;
+      font-weight: 700; text-decoration: none; border: 1px solid var(--magenta);
+      color: var(--text); background: transparent; transition: box-shadow .2s, transform .2s;
+    }
+    .btn.primary { background: var(--magenta); color: #140816; box-shadow: var(--glow); }
+    .btn:hover { transform: translateY(-2px); box-shadow: var(--glow); }
+
+    /* cassette */
+    .cassette {
+      position: relative; width: 100%; max-width: 440px; justify-self: center;
+      filter: drop-shadow(0 16px 30px rgba(0,0,0,.45));
+      transform: rotate(-4deg);
+      animation: float 6s ease-in-out infinite;
+    }
+    @keyframes float { 50% { transform: rotate(-2deg) translateY(-8px); } }
+    .reel { transform-origin: center; transform-box: fill-box; animation: spin 2.4s linear infinite; }
+    .reel.r2 { animation-duration: 2.4s; animation-direction: reverse; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* EQ bars */
+    .eq { display: flex; align-items: flex-end; gap: 6px; height: 92px; margin-top: 32px; }
+    .eq span {
+      flex: 1; border-radius: 3px 3px 0 0;
+      background: linear-gradient(to top, var(--magenta), var(--amber), var(--cyan));
+      height: 20%; animation: bar 1.1s ease-in-out infinite alternate;
+    }
+    .eq span:nth-child(2n) { animation-duration: .8s; }
+    .eq span:nth-child(3n) { animation-duration: 1.4s; }
+    .eq span:nth-child(4n) { animation-duration: .95s; animation-delay: -.3s; }
+    .eq span:nth-child(5n) { animation-duration: 1.2s; animation-delay: -.6s; }
+    @keyframes bar { from { height: 12%; } to { height: 100%; } }
+
+    /* ticker */
+    .ticker {
+      border-bottom: 1px solid var(--line);
+      background: var(--panel);
+      font-family: "VT323", monospace; font-size: 22px; color: var(--cyan);
+      white-space: nowrap; overflow: hidden;
+    }
+    .ticker-inner { display: inline-block; padding: 6px 0; animation: marquee 28s linear infinite; }
+    .ticker-inner span { margin-right: 48px; }
+    @keyframes marquee { from { transform: translateX(0); } to { transform: translateX(-50%); } }
+
+    /* ---------- sections ---------- */
+    section.block { padding: 72px 0; }
+    h2 {
+      font-family: "VT323", monospace; font-weight: 400; font-size: 52px; line-height: 1;
+      margin: 0 0 10px;
+    }
+    h2 .hash { color: var(--magenta); }
+    .sub { color: var(--dim); margin: 0 0 32px; max-width: 60ch; }
+
+    .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 16px; }
+    .card {
+      background: var(--panel); border: 1px solid var(--line); border-radius: 14px;
+      padding: 22px; position: relative; overflow: hidden;
+    }
+    .card::before {
+      content: ""; position: absolute; left: 0; right: 0; top: 0; height: 3px;
+      background: linear-gradient(90deg, var(--magenta), var(--cyan));
+    }
+    .card h3 { margin: 0 0 6px; font-size: 20px; }
+    .card p { margin: 0; color: var(--dim); font-size: 15px; }
+    .tag {
+      display: inline-block; font: 13px "JetBrains Mono", monospace; text-transform: uppercase;
+      letter-spacing: .06em; padding: 3px 9px; border-radius: 999px; margin-bottom: 12px;
+      border: 1px solid var(--line); color: var(--dim);
+    }
+    .tag.live { color: var(--cyan); border-color: var(--cyan); }
+    .tag.soon { color: var(--amber); border-color: var(--amber); }
+
+    .roadmap { list-style: none; padding: 0; margin: 0; display: grid; gap: 14px; counter-reset: step; }
+    .roadmap li {
+      counter-increment: step; display: grid; grid-template-columns: 56px 1fr; gap: 16px;
+      align-items: start; padding: 16px 18px; background: var(--panel);
+      border: 1px solid var(--line); border-radius: 12px;
+    }
+    .roadmap li::before {
+      content: counter(step, decimal-leading-zero); font-family: "VT323", monospace;
+      font-size: 40px; line-height: 1; color: var(--magenta);
+    }
+    .roadmap strong { display: block; }
+    .roadmap span { color: var(--dim); font-size: 15px; }
+
+    .build {
+      background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 22px;
+    }
+    .build pre {
+      margin: 12px 0 0; padding: 14px; overflow-x: auto; border-radius: 10px;
+      background: var(--bg); border: 1px solid var(--line);
+      font: 14px/1.5 "JetBrains Mono", monospace; color: var(--text);
+    }
+
+    footer {
+      border-top: 1px solid var(--line); padding: 32px 0 48px; color: var(--dim); font-size: 14px;
+    }
+    footer .wrap { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 12px; }
+
+    /* ---------- responsive / motion ---------- */
+    @media (max-width: 800px) {
+      .hero-grid { grid-template-columns: 1fr; }
+      .cassette { max-width: 340px; }
+      h2 { font-size: 42px; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after { animation: none !important; transition: none !important; }
+      html { scroll-behavior: auto; }
+    }
+  </style>
+</head>
+<body>
+
+<header class="hero">
+  <div class="wrap">
+    <nav class="topbar" aria-label="Top">
+      <span>TAPEWAVE // v0.1</span>
+      <a href="https://github.com/rahuling/tapewave">github ↗</a>
+    </nav>
+
+    <div class="hero-grid">
+      <div>
+        <h1>TAPEWAVE</h1>
+        <p class="tagline">The Winamp spirit, for the internet age.</p>
+        <p class="lede">An open-source music player that plays your files, your radio and your podcasts. Fast, native and small. Built in Rust, for Windows, macOS and Linux.</p>
+        <div class="cta">
+          <a class="btn primary" href="https://github.com/rahuling/tapewave">Get the source</a>
+          <a class="btn" href="#get">Build it</a>
+        </div>
+        <div class="eq" aria-hidden="true">
+          <span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span>
+        </div>
+      </div>
+
+      <svg class="cassette" viewBox="0 0 400 250" role="img" aria-label="Animated cassette tape">
+        <defs>
+          <linearGradient id="shell" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0" stop-color="#2a1d4a"/>
+            <stop offset="1" stop-color="#140c26"/>
+          </linearGradient>
+          <linearGradient id="label" x1="0" y1="0" x2="1" y2="0">
+            <stop offset="0" stop-color="#ff3dcb"/>
+            <stop offset=".5" stop-color="#ffb547"/>
+            <stop offset="1" stop-color="#3de7ff"/>
+          </linearGradient>
+        </defs>
+        <rect x="6" y="6" width="388" height="238" rx="18" fill="url(#shell)" stroke="#3de7ff" stroke-opacity=".5" stroke-width="2"/>
+        <rect x="34" y="34" width="332" height="92" rx="8" fill="#0d0716" stroke="#2e2150" stroke-width="2"/>
+        <rect x="60" y="150" width="280" height="62" rx="8" fill="url(#label)" opacity=".92"/>
+        <text x="200" y="176" text-anchor="middle" font-family="VT323, monospace" font-size="30" fill="#140816">TAPEWAVE  ·  C90</text>
+        <text x="200" y="200" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="12" fill="#140816">side A — local · radio · podcasts</text>
+        <g transform="translate(130 80)">
+          <g class="reel r1"><circle r="30" fill="#e8e0ff"/><circle r="10" fill="#0d0716"/>
+            <g stroke="#0d0716" stroke-width="5" stroke-linecap="round"><line x1="0" y1="-20" x2="0" y2="20"/><line x1="-20" y1="0" x2="20" y2="0"/></g></g>
+        </g>
+        <g transform="translate(270 80)">
+          <g class="reel r2"><circle r="30" fill="#e8e0ff"/><circle r="10" fill="#0d0716"/>
+            <g stroke="#0d0716" stroke-width="5" stroke-linecap="round"><line x1="0" y1="-20" x2="0" y2="20"/><line x1="-20" y1="0" x2="20" y2="0"/></g></g>
+        </g>
+        <rect x="112" y="118" width="176" height="6" rx="3" fill="#2e2150"/>
+      </svg>
+    </div>
+  </div>
+
+  <div class="ticker" aria-hidden="true" style="margin-top:48px">
+    <div class="ticker-inner">
+      <span>◉ LOCAL FILES</span><span>◉ INTERNET RADIO</span><span>◉ PODCASTS</span><span>◉ EQ + VISUALIZER (SOON)</span><span>◉ WINAMP SKINS (SOON)</span><span>◉ IOS · IPADOS · ANDROID (LATER)</span>
+      <span>◉ LOCAL FILES</span><span>◉ INTERNET RADIO</span><span>◉ PODCASTS</span><span>◉ EQ + VISUALIZER (SOON)</span><span>◉ WINAMP SKINS (SOON)</span><span>◉ IOS · IPADOS · ANDROID (LATER)</span>
+    </div>
+  </div>
+</header>
+
+<main>
+  <section class="block">
+    <div class="wrap">
+      <h2><span class="hash">#</span> What it plays</h2>
+      <p class="sub">Open formats and open streams. No account, no ads, no ripping.</p>
+      <div class="cards">
+        <article class="card">
+          <span class="tag live">working now</span>
+          <h3>Your local music</h3>
+          <p>MP3, FLAC, OGG/Vorbis, WAV and AAC/MP4, played straight from your disk.</p>
+        </article>
+        <article class="card">
+          <span class="tag live">working now</span>
+          <h3>Internet radio</h3>
+          <p>Paste any direct audio stream URL and it plays. Icecast and SHOUTcast-style streams both work.</p>
+        </article>
+        <article class="card">
+          <span class="tag live">working now</span>
+          <h3>Podcasts</h3>
+          <p>Drop in an RSS or Atom feed and pick an episode. Audio comes straight from the publisher.</p>
+        </article>
+        <article class="card">
+          <span class="tag soon">planned</span>
+          <h3>Spotify &amp; YouTube Music</h3>
+          <p>Later, as embedded sources. Their players, their audio, so no EQ or visualizer for those.</p>
+        </article>
+      </div>
+    </div>
+  </section>
+
+  <section class="block" style="padding-top:0">
+    <div class="wrap">
+      <h2><span class="hash">#</span> Roadmap</h2>
+      <p class="sub">Where it's headed, in order.</p>
+      <ol class="roadmap">
+        <li><div><strong>Playback core</strong><span>Local files, radio streams, podcast feeds, pause, stop and volume. Shipping now.</span></div></li>
+        <li><div><strong>Playlists</strong><span>M3U and PLS import and export, plus podcast subscriptions.</span></div></li>
+        <li><div><strong>EQ and spectrum visualizer</strong><span>A 10-band equalizer and the signature Winamp-style visualizer.</span></div></li>
+        <li><div><strong>Classic skins</strong><span>Load original Winamp <code>.wsz</code> skins, and make your own.</span></div></li>
+        <li><div><strong>Mobile</strong><span>iPhone, iPad and Android apps, sharing the same Rust playback engine.</span></div></li>
+        <li><div><strong>Embedded services</strong><span>Spotify and YouTube Music as sources, controlled through their official players.</span></div></li>
+      </ol>
+    </div>
+  </section>
+
+  <section class="block" id="get" style="padding-top:0">
+    <div class="wrap">
+      <h2><span class="hash">#</span> Build it</h2>
+      <p class="sub">Early software. Expect rough edges. You need Rust (stable). On Windows you also need WebView2, which Windows 11 includes.</p>
+      <div class="build">
+        <strong>Run from source</strong>
+        <pre><code>git clone https://github.com/rahuling/tapewave
+cd tapewave
+cargo run</code></pre>
+      </div>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <div class="wrap">
+    <span>Tapewave · MIT License · Not affiliated with Winamp or Llama Group.</span>
+    <span><a href="https://github.com/rahuling/tapewave">GitHub</a> · <a href="https://github.com/rahuling/tapewave/issues">Issues</a></span>
+  </div>
+</footer>
+
+</body>
+</html>
