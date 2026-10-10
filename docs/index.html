@@ -20,18 +20,16 @@
       --amber: #ffb547;
       --glow: 0 0 18px rgba(255, 61, 203, .45);
     }
-    @media (prefers-color-scheme: light) {
-      :root:not([data-theme="dark"]) {
-        --bg: #f6f1ff;
-        --panel: #ffffff;
-        --line: #d9cdf5;
-        --text: #1b1333;
-        --dim: #5f5485;
-        --magenta: #d6198f;
-        --cyan: #0a8fb0;
-        --amber: #b86e00;
-        --glow: none;
-      }
+    :root[data-theme="light"] {
+      --bg: #f6f1ff;
+      --panel: #ffffff;
+      --line: #d9cdf5;
+      --text: #1b1333;
+      --dim: #5f5485;
+      --magenta: #d6198f;
+      --cyan: #0a8fb0;
+      --amber: #b86e00;
+      --glow: none;
     }
 
     * { box-sizing: border-box; }
