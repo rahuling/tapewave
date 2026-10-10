@@ -1,4 +1,4 @@
-# Tapedeck
+# Tapewave
 
 An open-source, Winamp-style music player for the internet age. Written in Rust.
 
@@ -17,7 +17,7 @@ Desktop (Windows, macOS, Linux) with:
 - 10-band EQ and spectrum visualizer
 - Classic Winamp skin support (`.wsz`)
 - iOS, iPadOS, and Android apps. The engine is a separate crate with no UI dependencies, so the same playback code can back the mobile apps.
-- YouTube Music and Spotify as embedded sources, later. These services don't expose audio to third-party apps, so Tapedeck can control their players but can't analyze their audio (no EQ or visualizer for them).
+- YouTube Music and Spotify as embedded sources, later. These services don't expose audio to third-party apps, so Tapewave can control their players but can't analyze their audio (no EQ or visualizer for them).
 
 ## Layout
 
@@ -37,4 +37,4 @@ cargo run
 
 ## Name
 
-"Tapedeck" is a working name. Check trademark and crate/package-name availability before a public release.
+"Tapewave" is a working name. Check trademark and crate/package-name availability before a public release.

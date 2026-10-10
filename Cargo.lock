@@ -3573,18 +3573,18 @@ dependencies = [
 ]
 
 [[package]]
-name = "tapedeck"
+name = "tapewave"
 version = "0.1.0"
 dependencies = [
  "serde",
  "serde_json",
- "tapedeck-engine",
+ "tapewave-engine",
  "tauri",
  "tauri-build",
 ]
 
 [[package]]
-name = "tapedeck-engine"
+name = "tapewave-engine"
 version = "0.1.0"
 dependencies = [
  "feed-rs",

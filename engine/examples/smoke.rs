@@ -1,10 +1,10 @@
-//! Manual smoke test: `cargo run -p tapedeck-engine --example smoke -- <stream-url> <feed-url> [local-file]`.
+//! Manual smoke test: `cargo run -p tapewave-engine --example smoke -- <stream-url> <feed-url> [local-file]`.
 //! Parses the podcast feed, plays the first episode briefly, then the stream, and prints status.
 
 use std::thread::sleep;
 use std::time::Duration;
 
-use tapedeck_engine::{podcast, Engine};
+use tapewave_engine::{podcast, Engine};
 
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();

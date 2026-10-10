@@ -1,5 +1,5 @@
-﻿[package]
-name = "tapedeck-engine"
+[package]
+name = "tapewave-engine"
 version = "0.1.0"
 edition = "2024"
 

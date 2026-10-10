@@ -1,7 +1,7 @@
 // Hides the console window on Windows release builds.
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
-use tapedeck_engine::{podcast, Engine, Status};
+use tapewave_engine::{podcast, Engine, Status};
 use tauri::State;
 
 struct AppState {
@@ -63,5 +63,5 @@ fn main() {
             fetch_podcast,
         ])
         .run(tauri::generate_context!())
-        .expect("error while running Tapedeck");
+        .expect("error while running Tapewave");
 }

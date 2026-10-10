@@ -1,15 +1,15 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "Tapedeck",
+  "productName": "Tapewave",
   "version": "0.1.0",
-  "identifier": "dev.tapedeck.app",
+  "identifier": "dev.tapewave.app",
   "build": {
     "frontendDist": "ui"
   },
   "app": {
     "windows": [
       {
-        "title": "Tapedeck",
+        "title": "Tapewave",
         "width": 420,
         "height": 640,
         "resizable": true

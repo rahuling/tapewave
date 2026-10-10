@@ -1,4 +1,4 @@
-//! Audio engine for Tapedeck. No UI or Tauri dependencies, so the same crate
+//! Audio engine for Tapewave. No UI or Tauri dependencies, so the same crate
 //! can back the desktop app now and the iOS/Android/iPadOS apps later.
 
 pub mod player;
