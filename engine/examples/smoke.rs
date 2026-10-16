@@ -4,7 +4,7 @@
 use std::thread::sleep;
 use std::time::Duration;
 
-use tapewave_engine::{podcast, Engine};
+use tapewave_engine::{Engine, podcast};
 
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();

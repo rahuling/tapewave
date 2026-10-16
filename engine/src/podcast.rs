@@ -16,8 +16,17 @@ pub struct Podcast {
 }
 
 pub fn fetch(feed_url: &str) -> Result<Podcast, String> {
-    let response = ureq::get(feed_url).call().map_err(|e| format!("request failed: {e}"))?;
-    let reader = BufReader::new(response.into_body().into_reader());
+    let agent: ureq::Agent = ureq::Agent::config_builder()
+        .timeout_global(Some(std::time::Duration::from_secs(20)))
+        .build()
+        .into();
+    let response = agent
+        .get(feed_url)
+        .call()
+        .map_err(|e| format!("request failed: {e}"))?;
+    // Bound memory consumed by unusually large or malicious feeds.
+    use std::io::Read;
+    let reader = BufReader::new(response.into_body().into_reader().take(8 * 1024 * 1024));
     let feed = feed_rs::parser::parse(reader).map_err(|e| format!("not a valid feed: {e}"))?;
 
     let title = feed
@@ -36,7 +45,10 @@ pub fn fetch(feed_url: &str) -> Result<Podcast, String> {
                 .flat_map(|m| m.content.iter())
                 .find_map(|c| c.url.as_ref().map(|u| u.to_string()))?;
             Some(Episode {
-                title: entry.title.map(|t| t.content).unwrap_or_else(|| "Untitled".into()),
+                title: entry
+                    .title
+                    .map(|t| t.content)
+                    .unwrap_or_else(|| "Untitled".into()),
                 audio_url,
                 published: entry.published.or(entry.updated).map(|d| d.to_rfc3339()),
             })

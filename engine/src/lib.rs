@@ -1,5 +1,7 @@
-//! Audio engine for Tapewave. No UI or Tauri dependencies, so the same crate
-//! can back the desktop app now and the iOS/Android/iPadOS apps later.
+//! Audio engine for Tapewave. No UI dependencies; the native Windows shell
+//! communicates with the playback worker through in-process channels.
+
+mod loader;
 
 pub mod player;
 pub mod podcast;

@@ -1,67 +1,19 @@
-// Hides the console window on Windows release builds.
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
-use tapewave_engine::{podcast, Engine, Status};
-use tauri::State;
+#[cfg(windows)]
+mod native;
 
-struct AppState {
-    engine: Engine,
-}
+mod settings;
 
-#[tauri::command]
-fn play_file(path: String, state: State<AppState>) {
-    state.engine.play_file(path);
-}
-
-#[tauri::command]
-fn play_url(url: String, state: State<AppState>) {
-    state.engine.play_url(url);
-}
-
-#[tauri::command]
-fn pause(state: State<AppState>) {
-    state.engine.pause();
-}
-
-#[tauri::command]
-fn resume(state: State<AppState>) {
-    state.engine.resume();
-}
-
-#[tauri::command]
-fn stop(state: State<AppState>) {
-    state.engine.stop();
-}
-
-#[tauri::command]
-fn set_volume(volume: f32, state: State<AppState>) {
-    state.engine.set_volume(volume);
-}
-
-#[tauri::command]
-fn status(state: State<AppState>) -> Status {
-    state.engine.status()
-}
-
-// Blocking network call. Tauri runs sync commands off the main thread.
-#[tauri::command]
-fn fetch_podcast(feed_url: String) -> Result<podcast::Podcast, String> {
-    podcast::fetch(&feed_url)
-}
-
+#[cfg(windows)]
 fn main() {
-    tauri::Builder::default()
-        .manage(AppState { engine: Engine::spawn() })
-        .invoke_handler(tauri::generate_handler![
-            play_file,
-            play_url,
-            pause,
-            resume,
-            stop,
-            set_volume,
-            status,
-            fetch_podcast,
-        ])
-        .run(tauri::generate_context!())
-        .expect("error while running Tapewave");
+    if let Err(error) = native::run() {
+        native::show_startup_error(&error);
+    }
+}
+
+#[cfg(not(windows))]
+fn main() {
+    eprintln!("Tapewave's native desktop shell requires Windows 10/11 x64.");
+    std::process::exit(1);
 }

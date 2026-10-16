@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Tapewave: a Winamp-style player for the internet age</title>
-  <meta name="description" content="Tapewave is an open-source, Winamp-style music player written in Rust. Local files, internet radio and podcasts today, skins and mobile next.">
+  <meta name="description" content="Tapewave is an open-source, native Windows x64 music player written in Rust. Local files, internet radio and podcasts, without WebView2.">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=VT323&family=Space+Grotesk:wght@400;500;700&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
@@ -212,7 +212,7 @@
       <div>
         <h1>TAPEWAVE</h1>
         <p class="tagline">The Winamp spirit, for the internet age.</p>
-        <p class="lede">An open-source music player that plays your files, your radio and your podcasts. Fast, native and small. Built in Rust, for Windows, macOS and Linux.</p>
+        <p class="lede">An open-source music player that plays your files, your radio and your podcasts. Built in Rust with a native Windows x64 interface. No WebView2 or browser frontend.</p>
         <div class="cta">
           <a class="btn primary" href="https://github.com/rahuling/tapewave">Get the source</a>
           <a class="btn" href="#get">Build it</a>
@@ -299,7 +299,7 @@
         <li><div><strong>Playlists</strong><span>M3U and PLS import and export, plus podcast subscriptions.</span></div></li>
         <li><div><strong>EQ and spectrum visualizer</strong><span>A 10-band equalizer and the signature Winamp-style visualizer.</span></div></li>
         <li><div><strong>Classic skins</strong><span>Load original Winamp <code>.wsz</code> skins, and make your own.</span></div></li>
-        <li><div><strong>Mobile</strong><span>iPhone, iPad and Android apps, sharing the same Rust playback engine.</span></div></li>
+        <li><div><strong>Native platforms</strong><span>Windows x64 first. The independent Rust engine leaves room for other native platforms later.</span></div></li>
         <li><div><strong>Embedded services</strong><span>Spotify and YouTube Music as sources, controlled through their official players.</span></div></li>
       </ol>
     </div>
@@ -308,12 +308,14 @@
   <section class="block" id="get" style="padding-top:0">
     <div class="wrap">
       <h2><span class="hash">#</span> Build it</h2>
-      <p class="sub">Early software. Expect rough edges. You need Rust (stable). On Windows you also need WebView2, which Windows 11 includes.</p>
+      <p class="sub">Early software. You need Windows 10/11 x64, stable Rust and Visual Studio C++ Build Tools with a Windows SDK. No WebView2 required. Installer and portable ZIP packaging are included.</p>
       <div class="build">
         <strong>Run from source</strong>
         <pre><code>git clone https://github.com/rahuling/tapewave
 cd tapewave
-cargo run</code></pre>
+cargo run --target x86_64-pc-windows-msvc
+# Package with Inno Setup 6 installed:
+./scripts/build-windows.ps1 -Installer</code></pre>
       </div>
     </div>
   </section>

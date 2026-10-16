@@ -8,9 +8,33 @@ members = ["engine"]
 
 [dependencies]
 tapewave-engine = { path = "engine" }
-tauri = "2"
-serde = { version = "1", features = ["derive"] }
-serde_json = "1"
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61.2", features = [
+    "Win32_Foundation",
+    "Win32_Graphics_Gdi",
+    "Win32_Security",
+    "Win32_System_LibraryLoader",
+    "Win32_System_SystemServices",
+    "Win32_System_Threading",
+    "Win32_UI_Controls",
+    "Win32_UI_Controls_Dialogs",
+    "Win32_UI_HiDpi",
+    "Win32_UI_Input_KeyboardAndMouse",
+    "Win32_UI_Shell",
+    "Win32_UI_WindowsAndMessaging",
+] }
+
+[dependencies.serde]
+version = "1"
+features = ["derive"]
+
+[dependencies.serde_json]
+version = "1"
 
 [build-dependencies]
-tauri-build = "2"
+embed-resource = "3"
+
+[profile.release]
+lto = "thin"
+strip = true
