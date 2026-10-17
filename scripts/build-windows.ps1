@@ -6,7 +6,7 @@ $ErrorActionPreference = "Stop"
 $root = Split-Path -Parent $PSScriptRoot
 Push-Location $root
 try {
-    cargo test --workspace --locked --target x86_64-pc-windows-msvc
+    cargo test --workspace --locked -j 2 --target x86_64-pc-windows-msvc
     if ($LASTEXITCODE -ne 0) { throw "Tests failed" }
     cargo build --release --locked --target x86_64-pc-windows-msvc
     if ($LASTEXITCODE -ne 0) { throw "Release build failed" }

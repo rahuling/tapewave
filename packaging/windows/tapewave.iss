@@ -1,6 +1,6 @@
-; Build with Inno Setup 6: ISCC /DAppVersion=0.1.0 tapewave.iss
+; Build with Inno Setup 6: ISCC /DAppVersion=0.2.0 tapewave.iss
 #ifndef AppVersion
-  #define AppVersion "0.1.0"
+  #define AppVersion "0.2.0"
 #endif
 
 [Setup]
@@ -52,5 +52,8 @@ begin
   { Never delete user music. Preferences are kept unless the user opts out. }
   if (CurUninstallStep = usPostUninstall) and not UninstallSilent then
     if MsgBox('Also remove saved Tapewave preferences? Your music files will not be touched.', mbConfirmation, MB_YESNO) = IDYES then
+    begin
       DeleteFile(ExpandConstant('{localappdata}\Tapewave\settings.json'));
+      DeleteFile(ExpandConstant('{localappdata}\Tapewave\window.ron'));
+    end;
 end;

@@ -2,14 +2,15 @@
 //! commands over a channel, so the UI never blocks on decoding or I/O.
 
 use std::fs::File;
-use std::io::BufReader;
+use std::io::{Read, Seek, Write};
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::mpsc::{self, RecvTimeoutError, Sender};
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
 
-use rodio::{Decoder, MixerDeviceSink, Player};
+use rodio::{Decoder, MixerDeviceSink, Player, Source};
 
 use crate::loader::{Latest, LoadState};
 use crate::stream::LiveStream;
@@ -21,41 +22,57 @@ pub struct Status {
     pub source: Option<String>,
     pub volume: f32,
     pub error: Option<String>,
+    pub request_id: u64,
+    pub position: f64,
+    pub duration: Option<f64>,
+    pub seekable: bool,
+    pub finished: bool,
+    pub speed: f32,
 }
 
 enum Command {
-    PlayFile(PathBuf),
-    PlayUrl(String),
+    Play(u64, Input),
     Pause,
     Resume,
     Stop,
     SetVolume(f32),
+    Seek(f64),
+    Speed(f32),
     Loaded(u64, String, Result<Audio, String>),
     Shutdown,
 }
 
-type Audio = Box<dyn rodio::Source<Item = f32> + Send>;
+struct Audio {
+    source: Box<dyn Source<Item = f32> + Send>,
+    duration: Option<Duration>,
+    seekable: bool,
+    start: f64,
+}
 
 enum Input {
     File(PathBuf),
     Url(String),
+    Episode(String, f64),
 }
 
 impl Input {
     fn name(&self) -> String {
         match self {
             Self::File(path) => path.display().to_string(),
-            Self::Url(url) => url.clone(),
+            Self::Url(url) | Self::Episode(url, _) => url.clone(),
         }
     }
 }
 
 struct Client {
     tx: Sender<Command>,
+    next_id: AtomicU64,
+    active: Arc<AtomicU64>,
 }
 
 impl Drop for Client {
     fn drop(&mut self) {
+        self.active.store(0, Ordering::Relaxed);
         let _ = self.tx.send(Command::Shutdown);
     }
 }
@@ -76,6 +93,8 @@ impl Engine {
         }));
         let shared = Arc::clone(&status);
         let completed = tx.clone();
+        let active = Arc::new(AtomicU64::new(0));
+        let cancellation = Arc::clone(&active);
 
         thread::spawn(move || {
             let mut out = match rodio::DeviceSinkBuilder::open_default_sink() {
@@ -90,19 +109,23 @@ impl Engine {
             // A single loader and a one-item, latest-wins mailbox prevent
             // unbounded threads/queues when the user changes sources rapidly.
             let loads: Arc<Latest<(u64, Input)>> = Arc::new(Latest::default());
-            let pending = Arc::clone(&loads);
-            thread::spawn(move || {
-                while let Some((generation, input)) = pending.take() {
-                    let name = input.name();
-                    let audio = load(input);
-                    if completed
-                        .send(Command::Loaded(generation, name, audio))
-                        .is_err()
-                    {
-                        break;
+            let episodes: Arc<Latest<(u64, Input)>> = Arc::new(Latest::default());
+            for pending in [Arc::clone(&loads), Arc::clone(&episodes)] {
+                let completed = completed.clone();
+                let cancellation = Arc::clone(&cancellation);
+                thread::spawn(move || {
+                    while let Some((id, input)) = pending.take() {
+                        if cancellation.load(Ordering::Relaxed) != id {
+                            continue;
+                        }
+                        let name = input.name();
+                        let audio = load(input, id, &cancellation);
+                        if completed.send(Command::Loaded(id, name, audio)).is_err() {
+                            break;
+                        }
                     }
-                }
-            });
+                });
+            }
             let mut worker = Worker {
                 out: &mut out,
                 player: None,
@@ -110,6 +133,13 @@ impl Engine {
                 volume: 1.0,
                 loads,
                 loading: LoadState::default(),
+                episodes,
+                request_id: 0,
+                duration: None,
+                seekable: false,
+                finished: false,
+                speed: 1.0,
+                load_generation: 0,
             };
 
             loop {
@@ -121,20 +151,71 @@ impl Engine {
                 }
             }
             worker.loads.close();
+            worker.episodes.close();
         });
 
         Self {
-            client: Arc::new(Client { tx }),
+            client: Arc::new(Client {
+                tx,
+                next_id: AtomicU64::new(0),
+                active,
+            }),
             status,
         }
     }
 
-    pub fn play_file(&self, path: impl Into<PathBuf>) {
-        let _ = self.client.tx.send(Command::PlayFile(path.into()));
+    fn play(&self, input: Input) -> u64 {
+        let id = self.client.next_id.fetch_add(1, Ordering::Relaxed) + 1;
+        self.client.active.store(id, Ordering::Relaxed);
+        if self.client.tx.send(Command::Play(id, input)).is_err()
+            && let Ok(mut status) = self.status.lock()
+        {
+            status.request_id = id;
+            status.state = "stopped".into();
+            status.source = None;
+            status.finished = false;
+            status.error = Some(
+                "The audio engine is unavailable. Check your output device and restart Tapewave."
+                    .into(),
+            );
+        }
+        id
     }
 
-    pub fn play_url(&self, url: impl Into<String>) {
-        let _ = self.client.tx.send(Command::PlayUrl(url.into()));
+    pub fn play_file(&self, path: impl Into<PathBuf>) -> u64 {
+        self.play(Input::File(path.into()))
+    }
+
+    pub fn play_url(&self, url: impl Into<String>) -> u64 {
+        self.play(Input::Url(url.into()))
+    }
+
+    /// Prepare a finite episode in a temporary file so seek/resume is real,
+    /// rather than pretending a non-seekable radio stream supports it.
+    pub fn play_episode(&self, url: impl Into<String>, resume_at: f64) -> u64 {
+        self.play(Input::Episode(
+            url.into(),
+            if resume_at.is_finite() {
+                resume_at.clamp(0.0, 1_000_000_000.0)
+            } else {
+                0.0
+            },
+        ))
+    }
+
+    pub fn seek(&self, seconds: f64) {
+        if seconds.is_finite() {
+            let _ = self
+                .client
+                .tx
+                .send(Command::Seek(seconds.clamp(0.0, 1_000_000_000.0)));
+        }
+    }
+
+    pub fn set_speed(&self, speed: f32) {
+        if speed.is_finite() {
+            let _ = self.client.tx.send(Command::Speed(speed.clamp(0.5, 2.0)));
+        }
     }
 
     pub fn pause(&self) {
@@ -146,6 +227,7 @@ impl Engine {
     }
 
     pub fn stop(&self) {
+        self.client.active.store(0, Ordering::Relaxed);
         let _ = self.client.tx.send(Command::Stop);
     }
 
@@ -177,16 +259,22 @@ struct Worker<'a> {
     volume: f32,
     loads: Arc<Latest<(u64, Input)>>,
     loading: LoadState,
+    episodes: Arc<Latest<(u64, Input)>>,
+    request_id: u64,
+    duration: Option<Duration>,
+    seekable: bool,
+    finished: bool,
+    speed: f32,
+    load_generation: u64,
 }
 
 impl Worker<'_> {
     fn handle(&mut self, cmd: Command) {
         match cmd {
-            Command::PlayFile(path) => self.request(Input::File(path)),
-            Command::PlayUrl(url) => self.request(Input::Url(url)),
-            Command::Loaded(generation, name, result) => {
+            Command::Play(id, input) => self.request(id, input),
+            Command::Loaded(id, name, result) => {
                 // Stop/new-source invalidates older results, including errors.
-                if !self.loading.complete(generation) {
+                if self.request_id != id || !self.loading.complete(self.load_generation) {
                     return;
                 }
                 match result {
@@ -214,6 +302,10 @@ impl Worker<'_> {
             Command::Stop => {
                 self.loading.cancel();
                 self.loads.clear();
+                self.episodes.clear();
+                self.finished = false;
+                self.seekable = false;
+                self.duration = None;
                 if let Some(p) = self.player.take() {
                     p.stop();
                 }
@@ -224,35 +316,80 @@ impl Worker<'_> {
                     p.set_volume(v);
                 }
             }
+            Command::Seek(seconds) => {
+                if self.seekable {
+                    let target = self
+                        .duration
+                        .map_or(seconds, |d| seconds.min((d.as_secs_f64() - 0.1).max(0.0)));
+                    if let Some(player) = &self.player
+                        && let Err(error) = player.try_seek(Duration::from_secs_f64(target))
+                    {
+                        self.seekable = false;
+                        if let Ok(mut status) = self.shared.lock() {
+                            status.error =
+                                Some(format!("Seeking is unavailable for this file: {error}"));
+                        }
+                    }
+                }
+            }
+            Command::Speed(speed) => {
+                self.speed = speed;
+                if let Some(player) = &self.player {
+                    player.set_speed(speed);
+                }
+            }
             Command::Shutdown => unreachable!("handled by the command loop"),
         }
         self.publish();
     }
 
-    fn request(&mut self, input: Input) {
+    fn request(&mut self, id: u64, input: Input) {
         // Drop previous playback and publish loading immediately. File opening,
         // HTTP and decoder probing happen entirely on the loader thread.
         self.player = None;
-        let generation = self.loading.begin();
+        self.load_generation = self.loading.begin();
+        self.request_id = id;
+        self.finished = false;
+        self.seekable = false;
+        self.duration = None;
+        self.loads.clear();
+        self.episodes.clear();
         if let Ok(mut status) = self.shared.lock() {
             status.source = Some(input.name());
             status.error = None;
         }
-        self.loads.replace((generation, input));
+        if matches!(input, Input::Episode(..)) {
+            self.episodes.replace((id, input));
+        } else {
+            self.loads.replace((id, input));
+        }
     }
 
-    fn start<D>(&mut self, decoder: D, source: String)
-    where
-        D: rodio::Source + Send + 'static,
-    {
+    fn start(&mut self, audio: Audio, source: String) {
         // Replace the current track. Dropping the old player stops it.
         let player = Player::connect_new(self.out.mixer());
+        player.pause();
         player.set_volume(self.volume);
-        player.append(decoder);
+        player.set_speed(self.speed);
+        self.duration = audio.duration;
+        self.seekable = audio.seekable;
+        player.append(audio.source);
+        let mut warning = None;
+        if audio.seekable && audio.start > 0.0 {
+            let target = audio.duration.map_or(audio.start, |d| {
+                audio.start.min((d.as_secs_f64() - 1.0).max(0.0))
+            });
+            if let Err(error) = player.try_seek(Duration::from_secs_f64(target)) {
+                warning = Some(format!("Could not restore listening position: {error}"));
+            }
+        }
+        if !self.loading.paused {
+            player.play();
+        }
         self.player = Some(player);
         if let Ok(mut s) = self.shared.lock() {
             s.source = Some(source);
-            s.error = None;
+            s.error = warning;
         }
     }
 
@@ -266,13 +403,29 @@ impl Worker<'_> {
     fn check_finished(&mut self) {
         if self.player.as_ref().is_some_and(|player| player.empty()) {
             self.player = None;
-            self.publish();
+            self.finished = true;
         }
+        self.publish();
     }
 
     fn publish(&self) {
         if let Ok(mut s) = self.shared.lock() {
             s.volume = self.volume;
+            s.request_id = self.request_id;
+            s.duration = self.duration.map(|d| d.as_secs_f64());
+            s.seekable = self.seekable && self.player.is_some();
+            s.finished = self.finished;
+            s.speed = self.speed;
+            s.position = self.player.as_ref().map_or_else(
+                || {
+                    if self.finished {
+                        s.duration.unwrap_or(s.position)
+                    } else {
+                        0.0
+                    }
+                },
+                |p| p.get_pos().as_secs_f64(),
+            );
             s.state = match &self.player {
                 None if self.loading.pending && self.loading.paused => "paused",
                 None if self.loading.pending => "loading",
@@ -281,22 +434,67 @@ impl Worker<'_> {
                 Some(_) => "playing",
             }
             .into();
-            if self.player.is_none() && !self.loading.pending {
+            if self.player.is_none() && !self.loading.pending && !self.finished {
                 s.source = None;
             }
         }
     }
 }
 
-fn load(input: Input) -> Result<Audio, String> {
+fn load(input: Input, id: u64, active: &AtomicU64) -> Result<Audio, String> {
     match input {
         Input::File(path) => {
             let file = File::open(path).map_err(|e| e.to_string())?;
-            let decoder = Decoder::new(BufReader::new(file)).map_err(|e| e.to_string())?;
-            Ok(Box::new(decoder))
+            disk_audio(file, 0.0)
         }
-        Input::Url(url) => open_stream(&url).map(|decoder| Box::new(decoder) as Audio),
+        Input::Url(url) => open_stream(&url).map(|decoder| Audio {
+            source: Box::new(decoder),
+            duration: None,
+            seekable: false,
+            start: 0.0,
+        }),
+        Input::Episode(url, start) => {
+            let agent: ureq::Agent = ureq::Agent::config_builder()
+                .timeout_global(Some(Duration::from_secs(180)))
+                .build()
+                .into();
+            let response = agent.get(&url).call().map_err(|e| e.to_string())?;
+            let mut reader = response.into_body().into_reader();
+            // Anonymous/delete-on-close storage is also reclaimed by Windows
+            // if the process exits while a network read is being cancelled.
+            let mut temp = tempfile::tempfile().map_err(|e| e.to_string())?;
+            let mut bytes = [0u8; 64 * 1024];
+            let mut total = 0usize;
+            loop {
+                if active.load(Ordering::Relaxed) != id {
+                    return Err("Episode preparation cancelled".into());
+                }
+                let count = reader.read(&mut bytes).map_err(|e| e.to_string())?;
+                if count == 0 {
+                    break;
+                }
+                total += count;
+                if total > 256 * 1024 * 1024 {
+                    return Err("Episode exceeds the 256 MiB preparation limit".into());
+                }
+                temp.write_all(&bytes[..count]).map_err(|e| e.to_string())?;
+            }
+            temp.flush().map_err(|e| e.to_string())?;
+            temp.rewind().map_err(|e| e.to_string())?;
+            disk_audio(temp, start)
+        }
     }
+}
+
+fn disk_audio(file: File, start: f64) -> Result<Audio, String> {
+    let decoder = Decoder::try_from(file).map_err(|e| e.to_string())?;
+    let duration = decoder.total_duration();
+    Ok(Audio {
+        source: Box::new(decoder),
+        duration,
+        seekable: true,
+        start,
+    })
 }
 
 fn open_stream(url: &str) -> Result<Decoder<LiveStream>, String> {
@@ -325,4 +523,65 @@ fn open_stream(url: &str) -> Result<Decoder<LiveStream>, String> {
         builder = builder.with_mime_type(&mime);
     }
     builder.build().map_err(|e| e.to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn wav() -> Vec<u8> {
+        let samples = 8000u32;
+        let data_len = samples * 2;
+        let mut bytes = Vec::new();
+        bytes.extend_from_slice(b"RIFF");
+        bytes.extend_from_slice(&(36 + data_len).to_le_bytes());
+        bytes.extend_from_slice(b"WAVEfmt ");
+        bytes.extend_from_slice(&16u32.to_le_bytes());
+        bytes.extend_from_slice(&1u16.to_le_bytes());
+        bytes.extend_from_slice(&1u16.to_le_bytes());
+        bytes.extend_from_slice(&8000u32.to_le_bytes());
+        bytes.extend_from_slice(&16000u32.to_le_bytes());
+        bytes.extend_from_slice(&2u16.to_le_bytes());
+        bytes.extend_from_slice(&16u16.to_le_bytes());
+        bytes.extend_from_slice(b"data");
+        bytes.extend_from_slice(&data_len.to_le_bytes());
+        bytes.resize(44 + data_len as usize, 0);
+        bytes
+    }
+
+    #[test]
+    fn local_decoder_reports_real_duration_and_supports_seeking() {
+        let mut file = tempfile::NamedTempFile::new().unwrap();
+        file.write_all(&wav()).unwrap();
+        file.flush().unwrap();
+        let mut audio = load(
+            Input::File(file.path().to_path_buf()),
+            1,
+            &AtomicU64::new(1),
+        )
+        .unwrap();
+        assert!(audio.seekable);
+        assert!((audio.duration.unwrap().as_secs_f64() - 1.0).abs() < 0.02);
+        audio.source.try_seek(Duration::from_millis(500)).unwrap();
+        assert!(audio.source.next().is_some());
+    }
+
+    #[test]
+    fn failed_engine_reports_an_error_instead_of_loading_forever() {
+        let (tx, rx) = mpsc::channel();
+        drop(rx);
+        let engine = Engine {
+            client: Arc::new(Client {
+                tx,
+                next_id: AtomicU64::new(0),
+                active: Arc::new(AtomicU64::new(0)),
+            }),
+            status: Arc::new(Mutex::new(Status::default())),
+        };
+        let id = engine.play_file("unopened.wav");
+        let status = engine.status();
+        assert_eq!(status.request_id, id);
+        assert_eq!(status.state, "stopped");
+        assert!(status.error.unwrap().contains("restart Tapewave"));
+    }
 }

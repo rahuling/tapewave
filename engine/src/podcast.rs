@@ -7,6 +7,8 @@ pub struct Episode {
     pub title: String,
     pub audio_url: String,
     pub published: Option<String>,
+    pub description: String,
+    pub duration: Option<f64>,
 }
 
 #[derive(Debug, Clone, serde::Serialize)]
@@ -39,11 +41,48 @@ pub fn fetch(feed_url: &str) -> Result<Podcast, String> {
         .into_iter()
         .filter_map(|entry| {
             // Podcast audio is attached as a media enclosure.
-            let audio_url = entry
+            let media_audio = entry
                 .media
                 .iter()
                 .flat_map(|m| m.content.iter())
-                .find_map(|c| c.url.as_ref().map(|u| u.to_string()))?;
+                .filter(|c| {
+                    c.content_type
+                        .as_ref()
+                        .is_none_or(|t| t.as_str().starts_with("audio/"))
+                })
+                .find(|c| c.url.is_some());
+            let enclosure = entry.links.iter().find(|link| {
+                link.rel.as_deref() == Some("enclosure")
+                    && link
+                        .media_type
+                        .as_deref()
+                        .is_none_or(|mime| mime.starts_with("audio/"))
+            });
+            let (audio_url, duration) = if let Some(audio) = media_audio {
+                (
+                    audio.url.as_ref()?.to_string(),
+                    audio
+                        .duration
+                        .or_else(|| entry.media.iter().find_map(|m| m.duration))
+                        .map(|d| d.as_secs_f64()),
+                )
+            } else {
+                let link = enclosure?;
+                (link.href.clone(), None)
+            };
+            let description = plain_text(
+                &entry
+                    .summary
+                    .as_ref()
+                    .map(|text| text.content.clone())
+                    .or_else(|| {
+                        entry
+                            .content
+                            .as_ref()
+                            .and_then(|content| content.body.clone())
+                    })
+                    .unwrap_or_default(),
+            );
             Some(Episode {
                 title: entry
                     .title
@@ -51,9 +90,50 @@ pub fn fetch(feed_url: &str) -> Result<Podcast, String> {
                     .unwrap_or_else(|| "Untitled".into()),
                 audio_url,
                 published: entry.published.or(entry.updated).map(|d| d.to_rfc3339()),
+                description,
+                duration,
             })
         })
         .collect();
 
     Ok(Podcast { title, episodes })
+}
+
+fn plain_text(value: &str) -> String {
+    let mut output = String::new();
+    let mut tag = false;
+    for ch in value.chars().take(16_000) {
+        match ch {
+            '<' => {
+                tag = true;
+                output.push(' ');
+            }
+            '>' => tag = false,
+            _ if !tag => output.push(ch),
+            _ => {}
+        }
+    }
+    output
+        .replace("&amp;", "&")
+        .replace("&quot;", "\"")
+        .replace("&#39;", "'")
+        .replace("&nbsp;", " ")
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+        .chars()
+        .take(4000)
+        .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn descriptions_are_plain_text_not_executable_markup() {
+        assert_eq!(
+            plain_text("<p>A &amp; B</p><p>Next line.</p>"),
+            "A & B Next line."
+        );
+    }
 }

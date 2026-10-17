@@ -8,3 +8,4 @@ rodio = "0.22.2"
 ureq = "3.4.2"
 feed-rs = "2"
 serde = { version = "1.0.229", features = ["derive"] }
+tempfile = "3"
