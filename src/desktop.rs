@@ -122,9 +122,18 @@ impl Tapewave {
                 .text_styles
                 .insert(egui::TextStyle::Small, egui::FontId::proportional(12.0));
         });
+        #[cfg(debug_assertions)]
+        let smoke = smoke::Harness::from_args();
+        #[cfg(debug_assertions)]
+        let mut app = if smoke.is_some() {
+            Self::with_engine(Settings::load(), Engine::silent())
+        } else {
+            Self::from_settings(Settings::load())
+        };
+        #[cfg(not(debug_assertions))]
         let mut app = Self::from_settings(Settings::load());
         #[cfg(debug_assertions)]
-        if let Some(harness) = smoke::Harness::from_args() {
+        if let Some(harness) = smoke {
             app.settings = smoke::settings();
             app.smoke = Some(harness);
             app.poll_theme(&cc.egui_ctx);
@@ -141,8 +150,11 @@ impl Tapewave {
     }
 
     fn from_settings(settings: Settings) -> Self {
+        Self::with_engine(settings, Engine::spawn())
+    }
+
+    fn with_engine(settings: Settings, engine: Engine) -> Self {
         let (tx, rx) = mpsc::channel();
-        let engine = Engine::spawn();
         engine.set_volume(settings.volume);
         let selected_show = settings.shows.first().map(|show| show.url.clone());
         Self {
@@ -701,7 +713,7 @@ mod tests {
         for size in [[880.0, 640.0], [620.0, 480.0]] {
             for tab in [Tab::Music, Tab::Radio, Tab::Podcasts] {
                 let ctx = egui::Context::default();
-                let mut app = Tapewave::from_settings(smoke::settings());
+                let mut app = Tapewave::with_engine(smoke::settings(), Engine::silent());
                 app.tab = tab;
                 app.effective_palette.apply(&ctx);
                 let mut output = ctx.run_ui(
@@ -726,7 +738,7 @@ mod tests {
 
     #[test]
     fn browsing_sources_preserves_queue_and_playback_selection() {
-        let mut app = Tapewave::from_settings(smoke::settings());
+        let mut app = Tapewave::with_engine(smoke::settings(), Engine::silent());
         app.queue.replace(app.settings.library.clone(), 0);
         app.active = Some(app.queue.items[0].clone());
         let key = app.active.as_ref().unwrap().key();

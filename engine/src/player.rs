@@ -84,6 +84,26 @@ pub struct Engine {
 }
 
 impl Engine {
+    /// A deterministic, hardware-free client used only by UI regression tests.
+    /// Commands fail cleanly instead of initializing audio drivers in test processes.
+    #[cfg(debug_assertions)]
+    pub fn silent() -> Self {
+        let (tx, rx) = mpsc::channel();
+        drop(rx);
+        Self {
+            client: Arc::new(Client {
+                tx,
+                next_id: AtomicU64::new(0),
+                active: Arc::new(AtomicU64::new(0)),
+            }),
+            status: Arc::new(Mutex::new(Status {
+                state: "stopped".into(),
+                volume: 1.0,
+                ..Default::default()
+            })),
+        }
+    }
+
     pub fn spawn() -> Self {
         let (tx, rx) = mpsc::channel();
         let status = Arc::new(Mutex::new(Status {
